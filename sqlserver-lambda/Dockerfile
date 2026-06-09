@@ -1,23 +1,12 @@
 FROM public.ecr.aws/lambda/python:3.11
 
-# Instala dependências base
-RUN yum install -y \
-    unixODBC \
-    unixODBC-devel \
-    curl \
-    openssl \
+RUN yum install -y yum-utils unixODBC unixODBC-devel \
+    && yum-config-manager --add-repo https://packages.microsoft.com/config/rhel/7/prod.repo \
     && yum clean all
 
-# Baixa e importa a chave GPG da Microsoft
-RUN curl -L https://packages.microsoft.com/keys/microsoft.asc -o /tmp/microsoft.asc \
-    && rpm --import /tmp/microsoft.asc \
-    && rm /tmp/microsoft.asc
-
-# Baixa o RPM do msodbcsql17 e instala forçando, ignorando dependências e scripts de pre/post install
-RUN curl -L https://packages.microsoft.com/rhel/7/prod/msodbcsql17-17.10.6.1-1.x86_64.rpm \
-        -o /tmp/msodbcsql17.rpm \
-    && rpm -i --nodeps --noscripts /tmp/msodbcsql17.rpm \
-    && rm /tmp/msodbcsql17.rpm
+RUN ACCEPT_EULA=Y yum install -y --nogpgcheck --skip-broken msodbcsql17 \
+    && yum clean all \
+    && rm -rf /var/cache/yum
 
 RUN pip install --no-cache-dir pyodbc boto3
 
