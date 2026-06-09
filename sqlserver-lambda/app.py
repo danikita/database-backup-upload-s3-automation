@@ -57,7 +57,7 @@ def lambda_handler(event, context):
         db_user, db_password = get_db_credentials()
 
         conn_str = (
-            f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
             f"SERVER={DB_HOST},{DB_PORT};"
             f"UID={db_user};"
             f"PWD={db_password};"
