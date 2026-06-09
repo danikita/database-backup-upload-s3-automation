@@ -1,10 +1,10 @@
 FROM public.ecr.aws/lambda/python:3.11
 
-# Instala repo Microsoft e força instalação ignorando conflitos
-RUN yum install -y yum-utils \
+# Dependências básicas
+RUN yum install -y gcc gcc-c++ make yum-utils \
     && yum-config-manager --add-repo https://packages.microsoft.com/config/rhel/7/prod.repo \
     && yum install -y --nogpgcheck unixODBC-devel \
-    && ACCEPT_EULA=Y yum install -y --nogpgcheck msodbcsql18 || true \
+    && ACCEPT_EULA=Y yum install -y --nogpgcheck msodbcsql17 \
     && yum clean all \
     && rm -rf /var/cache/yum
 
