@@ -6,25 +6,52 @@ import boto3
 import datetime
 from zoneinfo import ZoneInfo
 
-# Variáveis de ambiente
-DB_HOST = os.getenv("DB_HOST","sqlserver-backup-test.csrqpahbegrw.us-east-1.rds.amazonaws.com")
-DB_PORT = os.getenv("DB_PORT", "1433")
-SECRET_ARN = os.getenv("SECRET_ARN","arn:aws:secretsmanager:us-east-1:909203251240:secret:secret-rds-sqlserver-hQqEr9")
-S3_BUCKET = os.getenv("S3_BUCKET","backup-teste-lambda")
-S3_PREFIX = os.getenv("S3_PREFIX", "sqlserver/")
+def load_config(file_path="config.txt"):
+    config = {}
+    with open(file_path, "r") as file:
+        for line in file:
+            if "=" in line:
+                key, value = line.strip().split("=", 1)
+                config[key] = value
+    return config
 
 
-# Timestamp para nome do arquivo
+config = load_config()
+
+DB_HOST = config.get("DB_HOST")
+DB_PORT = config.get("DB_PORT")
+S3_BUCKET = config.get("S3_BUCKET")
+S3_PREFIX = config.get("S3_PREFIX")
+
+
+def get_db_credentials():
+
+    # If SECRET_ARN is populated, use AWS Secrets Manager.
+    if config.get("SECRET_ARN"):
+        secrets_client = boto3.client("secretsmanager", region_name="us-east-1")
+        response = secrets_client.get_secret_value(SecretId=config.get("SECRET_ARN"))
+        secret = json.loads(response["SecretString"])
+        return secret["username"], secret["password"], secret.get("dbname")
+
+    # Otherwise, use the credentials from the file.
+    return (
+        config.get("DB_USER"),
+        config.get("DB_PASSWORD"),
+        config.get("DB_NAME")
+    )
+
+
+# Timestamp for the file name
 timestamp = datetime.datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%Y%m%d%H%M%S")
 
-# Função para buscar credenciais no Secrets Manager
+# Function to retrieve credentials from AWS Secrets Manager.
 def get_db_credentials(secret_arn):
     secrets_client = boto3.client("secretsmanager", region_name="us-east-1")
     response = secrets_client.get_secret_value(SecretId=secret_arn)
     secret = json.loads(response["SecretString"])
     return secret["username"], secret["password"]
 
-# Função principal do Lambda
+# Main Lambda function
 def lambda_handler(event, context):
     results = []
 
@@ -56,14 +83,14 @@ def lambda_handler(event, context):
             try:
                 cursor.execute(sql)
                 conn.commit()
-                results.append(f"✅ Backup iniciado para {db} → {s3_arn}")
+                results.append(f"Backup iniciado para {db} → {s3_arn}")
             except Exception as e:
-                results.append(f"❌ Erro ao iniciar backup de {db}: {str(e)}")
+                results.append(f"Erro ao iniciar backup de {db}: {str(e)}")
 
     except Exception as e:
-        results.append(f"❌ Erro de conexão ou credenciais: {str(e)}")
+        results.append(f"Erro de conexão ou credenciais: {str(e)}")
 
     return {
-        "statusCode": 200 if all("✅" in r for r in results) else 500,
+        "statusCode": 200 if all("OK" in r for r in results) else 500,
         "body": results
     }
