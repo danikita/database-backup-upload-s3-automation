@@ -34,13 +34,12 @@ def get_db_credentials():
         secrets_client = boto3.client("secretsmanager", region_name="us-east-1")
         response = secrets_client.get_secret_value(SecretId=config.get("SECRET_ARN"))
         secret = json.loads(response["SecretString"])
-        return secret["username"], secret["password"], secret.get("dbname")
+        return secret["username"], secret["password"]
 
     # Otherwise, use the credentials from the file.
     return (
         config.get("DB_USER"),
-        config.get("DB_PASSWORD"),
-        config.get("DB_NAME")
+        config.get("DB_PASSWORD")
     )
 
 
