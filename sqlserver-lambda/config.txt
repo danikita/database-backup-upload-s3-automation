@@ -11,9 +11,7 @@ SECRET_ARN=<secrets-manager-arn>
 # Fill in only if you are NOT using Secrets
 DB_USER=<database-user>
 DB_PASSWORD=<database-password>
-DB_NAME=<database-name>
 
 # --- S3 ---
 S3_BUCKET=<bucket-name>
 S3_PREFIX=<prefix>
-``
