@@ -28,14 +28,20 @@ S3_PREFIX = config.get("S3_PREFIX")
 
 def get_db_credentials():
 
-    secret_arn = config.get("SECRET_ARN", "").strip()
 
-    # Só usa Secrets se tiver valor válido
-    if secret_arn:
-        secrets_client = boto3.client("secretsmanager", region_name="us-east-1")
-        response = secrets_client.get_secret_value(SecretId=secret_arn)
-        secret = json.loads(response["SecretString"])
-        return secret["username"], secret["password"]
+secret_arn = config.get("SECRET_ARN")
+
+# ✅ valida se é realmente um ARN válido
+if secret_arn and secret_arn.startswith("arn:"):
+    
+    secret_arn = secret_arn.strip()
+
+    secrets_client = boto3.client("secretsmanager", region_name="us-east-1")
+    response = secrets_client.get_secret_value(SecretId=secret_arn)
+    secret = json.loads(response["SecretString"])
+
+    return secret["username"], secret["password"]
+
 
     # Senha manual
     return (
