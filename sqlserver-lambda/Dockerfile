@@ -1,6 +1,5 @@
 FROM public.ecr.aws/lambda/python:3.11
 
-# Dependências base
 RUN yum install -y \
     unixODBC \
     unixODBC-devel \
