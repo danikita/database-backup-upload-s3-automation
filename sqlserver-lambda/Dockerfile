@@ -21,6 +21,5 @@ RUN odbcinst -q -d | grep -i "ODBC Driver 17" || (echo "DRIVER 17 NAO ENCONTRADO
 RUN pip install --no-cache-dir pyodbc boto3
 
 COPY app.py ${LAMBDA_TASK_ROOT}
-COPY config.txt ${LAMBDA_TASK_ROOT}
 
 CMD ["app.lambda_handler"]
