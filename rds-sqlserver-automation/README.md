@@ -78,11 +78,6 @@ aws iam create-access-key --user-name backup-user
 SSH into the bastion host, clone this repository, and configure the AWS CLI with the credentials from Step 2:
 
 ```bash
-git clone https://github.com/danikita/lambda-backup-rds
-aws configure
-
-cd lambda-backup-rds/sqlserver-lambda
-
 git clone https://github.com/danikita/database-backup-upload-s3-automation
 aws configure
 
