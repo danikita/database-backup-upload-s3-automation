@@ -10,14 +10,14 @@ secrets_client = boto3.client("secretsmanager")
 
 
 def get_db_credentials_from_secret(secret_arn: str):
-    """Busca usuário e senha no Secrets Manager."""
+    """Retrieves username and password from Secrets Manager."""
     response = secrets_client.get_secret_value(SecretId=secret_arn)
     secret = json.loads(response["SecretString"])
     return secret["username"], secret["password"]
 
 
 def list_databases(db_host: str, db_port: str, db_user: str, db_password: str):
-    """Lista os bancos de dados (exceto system schemas)."""
+    """Lists the databases (excluding system schemas)."""
     cmd = [
         "mysql",
         "-h", db_host,
@@ -39,19 +39,19 @@ def list_databases(db_host: str, db_port: str, db_user: str, db_password: str):
 
 def lambda_handler(event, context):
     """
-    Parâmetros aceitos no evento de teste (todos opcionais — fallback para env vars):
+    Accepted parameters in the test event (all optional — fallback to environment variables):
 
     {
-        "db_host":      "my-rds.amazonaws.com",   // RDS endpoint
-        "db_port":      "3306",                   // porta (padrão: 3306)
-        "secret_arn":   "arn:aws:secretsmanager:...",  // ARN do Secrets Manager
-        "db_user":      "admin",                  // usuário direto (alternativa ao secret_arn)
-        "db_password":  "senha",                  // senha direta  (alternativa ao secret_arn)
-        "s3_bucket":    "meu-bucket",             // nome do bucket S3
-        "s3_prefix":    "mysql/"                  // prefixo S3 (padrão: "mysql/")
+        "db_host":      "my-rds.amazonaws.com",          // RDS endpoint
+        "db_port":      "3306",                          // Port (default: 3306)
+        "secret_arn":   "arn:aws:secretsmanager:...",    // Secrets Manager ARN
+        "db_user":      "admin",                         // Direct username (alternative to secret_arn)
+        "db_password":  "password",                      // Direct password (alternative to secret_arn)
+        "s3_bucket":    "my-bucket",                     // S3 bucket name
+        "s3_prefix":    "mysql/"                         // S3 prefix (default: "mysql/")
     }
 
-    Prioridade de credenciais: secret_arn > db_user + db_password > variáveis de ambiente.
+    Credential priority: secret_arn > db_user + db_password > environment variables.
     """
 
     # ── Configurações de conexão ────────────────────────────────────────────────
@@ -72,11 +72,11 @@ def lambda_handler(event, context):
         or os.getenv("S3_PREFIX", "mysql/")
     )
 
-    # Garante que o prefixo termina com "/"
+    # Ensures that the prefix ends with "/"
     if s3_prefix and not s3_prefix.endswith("/"):
         s3_prefix += "/"
 
-    # ── Credenciais ─────────────────────────────────────────────────────────────
+    # ── Credentials ─────────────────────────────────────────────────────────────
     secret_arn = event.get("secret_arn") or os.getenv("SECRET_ARN", "")
 
     if secret_arn:
@@ -85,7 +85,7 @@ def lambda_handler(event, context):
         except Exception as e:
             return {
                 "statusCode": 500,
-                "body": f"❌ Failed to retrieve secret '{secret_arn}': {str(e)}"
+                "body": f"Failed to retrieve secret '{secret_arn}': {str(e)}"
             }
     elif event.get("db_user") and event.get("db_password"):
         db_user = event["db_user"]
@@ -97,17 +97,17 @@ def lambda_handler(event, context):
         return {
             "statusCode": 400,
             "body": (
-                "❌ Credenciais não fornecidas. "
-                "Informe 'secret_arn' ou 'db_user'+'db_password' no evento, "
-                "ou defina as variáveis de ambiente SECRET_ARN / DB_USER+DB_PASSWORD."
+                "Credentials not provided. "
+                "Inform either 'secret_arn' or 'db_user'+'db_password' in the event, "
+                "or define the environment variables SECRET_ARN or DB_USER + DB_PASSWORD."
             )
         }
 
     # ── Validações básicas ──────────────────────────────────────────────────────
     if not db_host:
-        return {"statusCode": 400, "body": "❌ 'db_host' não informado."}
+        return {"statusCode": 400, "body": " 'db_host' not provided."}
     if not s3_bucket:
-        return {"statusCode": 400, "body": "❌ 's3_bucket' não informado."}
+        return {"statusCode": 400, "body": " 's3_bucket' not provided."}
 
     # ── Listar bancos ───────────────────────────────────────────────────────────
     try:
@@ -121,7 +121,7 @@ def lambda_handler(event, context):
     if not databases:
         return {
             "statusCode": 200,
-            "body": "⚠️ Nenhum banco de dados encontrado (excluindo system schemas)."
+            "body": "No databases found (excluding system schemas)."
         }
 
     # ── Dump + upload ───────────────────────────────────────────────────────────
@@ -144,7 +144,7 @@ def lambda_handler(event, context):
 
         result = subprocess.run(dump_cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            results.append(f"❌ {db} — mysqldump falhou: {result.stderr.strip()}")
+            results.append(f" {db} — mysqldump failed: {result.stderr.strip()}")
             continue
 
         try:
@@ -152,7 +152,7 @@ def lambda_handler(event, context):
             s3_client.upload_file(filepath, s3_bucket, s3_key)
             results.append(f"✅ {db} → s3://{s3_bucket}/{s3_key}")
         except Exception as e:
-            results.append(f"❌ {db} — upload falhou: {str(e)}")
+            results.append(f"❌ {db} — upload failed: {str(e)}")
 
     return {
         "statusCode": 200,
