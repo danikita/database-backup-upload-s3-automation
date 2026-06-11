@@ -39,6 +39,7 @@ aws iam attach-user-policy --user-name backup-user --policy-arn arn:aws:iam::aws
 aws iam attach-user-policy --user-name backup-user --policy-arn arn:aws:iam::aws:policy/AmazonRDSFullAccess
 aws iam attach-user-policy --user-name backup-user --policy-arn arn:aws:iam::aws:policy/AmazonEC2FullAccess
 aws iam attach-user-policy --user-name backup-user --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess
+aws iam attach-user-policy --user-name backup-user --policy-arn arn:aws:iam::aws:policy/AmazonEventBridgeFullAccess
 ```
 
 Then create and save the access key credentials:
