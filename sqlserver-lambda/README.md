@@ -212,3 +212,50 @@ aws lambda invoke \
 ```
 
 The `--follow` flag streams CloudWatch logs in real time so you can verify whether the backup completed successfully.
+
+---
+
+## ⚠️ Networking Considerations
+
+Before invoking the function, make sure the Lambda and the RDS instance are in the **same VPC** (or connected VPCs), and that the **Lambda's security group** is allowed in the RDS inbound rules on the SQL Server port (default: `1433`).
+
+Without proper network connectivity between Lambda and RDS, the backup will fail with a connection timeout.
+
+---
+
+## Extra Step — Automate with EventBridge (Scheduled Backups)
+
+You can schedule the Lambda to run automatically using an EventBridge rule with a cron expression.
+
+### 1. Create the rule
+
+The example below schedules the backup every **Monday at 10:00 PM UTC**:
+
+```bash
+aws events put-rule \
+  --name lambda-sqlserver-backup-weekly \
+  --schedule-expression "cron(0 22 ? * MON *)"
+```
+
+Adjust the cron expression to match your desired schedule. See the [AWS cron expression reference](https://docs.aws.amazon.com/scheduler/latest/UserGuide/schedule-types.html#cron-based) for syntax details.
+
+### 2. Grant EventBridge permission to invoke the Lambda
+
+```bash
+aws lambda add-permission \
+  --function-name lambda-sqlserver-backup \
+  --statement-id eventbridge-invoke \
+  --action lambda:InvokeFunction \
+  --principal events.amazonaws.com \
+  --source-arn arn:aws:events:<region>:<account-id>:rule/lambda-sqlserver-backup-weekly
+```
+
+### 3. Set the Lambda as the rule target
+
+```bash
+aws events put-targets \
+  --rule lambda-sqlserver-backup-weekly \
+  --targets "Id"="1","Arn"="arn:aws:lambda:<region>:<account-id>:function:lambda-sqlserver-backup"
+```
+
+Once configured, EventBridge will automatically trigger the backup function on the defined schedule without any manual invocation.
