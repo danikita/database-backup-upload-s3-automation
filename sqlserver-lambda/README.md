@@ -1,6 +1,29 @@
 # SQL Server RDS Backup to S3 via AWS Lambda
 
-This Lambda function automates native backups of SQL Server RDS instances directly to an S3 bucket using a containerized image deployed via Amazon ECR.
+This project automates native backups of SQL Server RDS instances to Amazon S3 using a serverless, container-based architecture.
+
+The diagram below illustrates how the components interact:
+
+<img width="932" height="551" alt="image" src="https://github.com/user-attachments/assets/4f740d75-bc45-416f-aa91-03d51b84396e" />
+
+### How it works
+
+The solution is built around an AWS Lambda function packaged as a Docker image and deployed via Amazon ECR. The function connects directly to the RDS SQL Server instance, triggers a native backup using the `rds_backup_database` stored procedure, and writes the backup file straight to an S3 bucket — no intermediate storage required.
+
+An **EC2 Bastion** host is used during the initial setup phase to build the Docker image and push it to ECR. Once the Lambda function is deployed, the bastion is no longer needed for day-to-day operation.
+
+**EventBridge** scheduler rules are used to trigger the Lambda automatically on a defined schedule, supporting three independent backup tiers: full, differential, and transaction log — each with its own frequency and S3 prefix.
+
+The backup file lands directly in **S3**, where lifecycle policies can be applied per backup type to automatically expire old files and control storage costs.
+
+### Components
+
+- **EC2 Bastion** — used once at setup to build and push the container image to ECR
+- **ECR** — stores the Docker image that packages the Lambda runtime and the ODBC driver for SQL Server
+- **Lambda** — executes the backup logic: connects to RDS, triggers the native backup, and writes the `.bak`, `.diff.bak`, or `.trn` file to S3
+- **EventBridge** — schedules the Lambda invocations with different backup types and frequencies
+- **RDS SQL Server** — the source database; must have the `SQLSERVER_BACKUP_RESTORE` option group enabled
+- **S3** — the backup destination; organized by prefix per backup type, with lifecycle rules for automated retention
 
 ---
 
