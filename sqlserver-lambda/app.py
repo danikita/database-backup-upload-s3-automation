@@ -19,7 +19,7 @@ def get_db_credentials(event):
     db_password = event.get("DB_PASSWORD")
 
     if not db_user or not db_password:
-        raise ValueError("Forneça SECRET_ARN ou DB_USER + DB_PASSWORD no event.")
+        raise ValueError("Provide either SECRET_ARN or DB_USER + DB_PASSWORD in the event.")
 
     return db_user, db_password
 
@@ -34,7 +34,7 @@ def lambda_handler(event, context):
         S3_PREFIX = event.get("S3_PREFIX", "")
 
         if not DB_HOST or not S3_BUCKET:
-            raise ValueError("DB_HOST e S3_BUCKET são obrigatórios no event.")
+            raise ValueError("DB_HOST and S3_BUCKET are required in the event.")
 
         db_user, db_password = get_db_credentials(event)
 
@@ -71,9 +71,9 @@ def lambda_handler(event, context):
             try:
                 cursor.execute(sql)
                 conn.commit()
-                results.append(f"Backup iniciado para {db} → {s3_arn}")
+                results.append(f"Backup started for {db} → {s3_arn}")
             except Exception as e:
-                results.append(f"Erro ao iniciar backup de {db}: {str(e)}")
+                results.append(f"Failed to start backup for {db}: {str(e)}")
 
     except Exception as e:
         results.append(f"Erro: {str(e)}")
