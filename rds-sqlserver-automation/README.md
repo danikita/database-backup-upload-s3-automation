@@ -12,7 +12,7 @@ The solution is built around an AWS Lambda function packaged as a Docker image a
 
 An **EC2 Bastion** host is used during the initial setup phase to build the Docker image and push it to ECR. Once the Lambda function is deployed, the bastion is no longer needed for day-to-day operation.
 
-**EventBridge** scheduler rules are used to trigger the Lambda automatically on a defined schedule, supporting three independent backup tiers: full, differential, and transaction log — each with its own frequency and S3 prefix.
+**EventBridge** scheduler rules are used to trigger the Lambda automatically on a defined schedule, supporting three independent backup tiers: full and differential — each with its own frequency and S3 prefix.
 
 The backup file lands directly in **S3**, where lifecycle policies can be applied per backup type to automatically expire old files and control storage costs.
 
@@ -20,7 +20,7 @@ The backup file lands directly in **S3**, where lifecycle policies can be applie
 
 - **EC2 Bastion** — used once at setup to build and push the container image to ECR
 - **ECR** — stores the Docker image that packages the Lambda runtime and the ODBC driver for SQL Server
-- **Lambda** — executes the backup logic: connects to RDS, triggers the native backup, and writes the `.bak`, `.diff.bak`, or `.trn` file to S3
+- **Lambda** — executes the backup logic: connects to RDS, triggers the native backup, and writes the `.bak` or `.diff.bak` file to S3
 - **EventBridge** — schedules the Lambda invocations with different backup types and frequencies
 - **RDS SQL Server** — the source database; must have the `SQLSERVER_BACKUP_RESTORE` option group enabled
 - **S3** — the backup destination; organized by prefix per backup type, with lifecycle rules for automated retention
@@ -210,7 +210,7 @@ aws lambda invoke \
     "SECRET_ARN": "<secrets-manager-arn>",
     "S3_BUCKET": "<bucket-name>",
     "S3_PREFIX": "<prefix>/",
-    "BACKUP_TYPE": "<FULL/DIFFERENTIAL/LOG>"
+    "BACKUP_TYPE": "<FULL/DIFFERENTIAL>"
   }' \
   response.json \
 && aws logs tail /aws/lambda/lambda-sqlserver-backup --follow
@@ -231,7 +231,7 @@ aws lambda invoke \
     "DB_PASSWORD": "<db-password>",
     "S3_BUCKET": "<bucket-name>",
     "S3_PREFIX": "<prefix>/",
-    "BACKUP_TYPE": "<FULL/DIFFERENTIAL/LOG>"
+    "BACKUP_TYPE": "<FULL/DIFFERENTIAL>"
   }' \
   response.json \
 && aws logs tail /aws/lambda/lambda-sqlserver-backup --follow
@@ -247,10 +247,9 @@ The Lambda supports three backup types via the `BACKUP_TYPE` field in the event 
 |----------------|-----------------------------------------------------------------------------|----------------|
 | `FULL`         | Complete database backup. Default if `BACKUP_TYPE` is omitted.              | `.bak`         |
 | `DIFFERENTIAL` | Only changes since the last FULL backup. Requires a prior FULL backup.      | `.diff.bak`    |
-| `LOG`          | Transaction log backup. Requires Full Recovery Model and a prior FULL backup.| `.trn`         |
 
-> **Important:** `DIFFERENTIAL` and `LOG` backups depend on a `FULL` backup existing first.  
-> `LOG` backups additionally require the database to be in **Full Recovery Model**.
+> **Important:** `DIFFERENTIAL` backups depend on a `FULL` backup existing first.  
+> `LOG` backups require specific configurations, since AWS manages it.
 
 ---
 
@@ -307,7 +306,6 @@ A common backup strategy uses **three separate EventBridge rules pointing to the
 |------------------------|--------------|---------------------------|
 | Full backup            | `FULL`       | Weekly (e.g. Sunday 1 AM) |
 | Differential backup    | `DIFFERENTIAL` | Daily (e.g. every day 1 AM, except Sunday) |
-| Log backup             | `LOG`        | Every few hours (e.g. every 4 hours) |
 
 ### 1. Full backup — weekly (Sunday at 1:00 AM UTC)
 
@@ -355,29 +353,6 @@ aws events put-targets \
   }]'
 ```
 
-### 3. Log backup — every 4 hours
-
-```bash
-aws events put-rule \
-  --name lambda-sqlserver-backup-log \
-  --schedule-expression "rate(4 hours)"
-
-aws lambda add-permission \
-  --function-name lambda-sqlserver-backup \
-  --statement-id eventbridge-invoke-log \
-  --action lambda:InvokeFunction \
-  --principal events.amazonaws.com \
-  --source-arn arn:aws:events:<region>:<account-id>:rule/lambda-sqlserver-backup-log
-
-aws events put-targets \
-  --rule lambda-sqlserver-backup-log \
-  --targets '[{
-    "Id": "log",
-    "Arn": "arn:aws:lambda:<region>:<account-id>:function:lambda-sqlserver-backup",
-    "Input": "{\"DB_HOST\":\"<rds-endpoint>\",\"DB_PORT\":\"1433\",\"SECRET_ARN\":\"<secrets-manager-arn>\",\"S3_BUCKET\":\"<bucket-name>\",\"S3_PREFIX\":\"backups/\",\"BACKUP_TYPE\":\"LOG\"}"
-  }]'
-```
-
 > Adjust schedules and the `Input` payload to match your environment. The `Input` field is how EventBridge passes the payload to the Lambda when triggered automatically — it replaces the `--payload` used in manual invocations.
 
 ---
@@ -386,7 +361,7 @@ aws events put-targets \
 
 ## Extra Step — S3 Lifecycle Policy (Automatic Backup Retention)
 
-Since full, differential, and log backups have different sizes and recovery purposes, it makes sense to apply **different retention periods per backup type**. The file naming convention used by this Lambda (`FULL`, `DIFFERENTIAL`, `LOG` in the filename) makes it straightforward to target each type with a separate lifecycle rule using S3 prefixes.
+Since full and differential backups have different sizes and recovery purposes, it makes sense to apply **different retention periods per backup type**. The file naming convention used by this Lambda (`FULL` and `DIFFERENTIAL` in the filename) makes it straightforward to target each type with a separate lifecycle rule using S3 prefixes.
 
 ### Suggested retention policy
 
@@ -394,7 +369,6 @@ Since full, differential, and log backups have different sizes and recovery purp
 |----------------|---------------------|----------------------------------------------------------------|
 | `FULL`         | 30 days             | Kept longer as the base for any restore chain                  |
 | `DIFFERENTIAL` | 7 days              | Only useful between two FULL backups                           |
-| `LOG`          | 2 days              | High frequency; only needed for point-in-time recovery windows |
 
 ### AWS CLI command
 
@@ -416,18 +390,12 @@ aws s3api put-bucket-lifecycle-configuration \
         "Filter": { "Prefix": "backups/" },
         "Status": "Enabled",
         "Expiration": { "Days": 7 }
-      },
-      {
-        "ID": "RetainLogBackups2Days",
-        "Filter": { "Prefix": "backups/" },
-        "Status": "Enabled",
-        "Expiration": { "Days": 2 }
       }
     ]
   }'
 ```
 
-> **Note:** For the prefix-based rules above to correctly target each backup type independently, the cleanest approach is to use **separate S3 prefixes per type** — e.g. `backups/full/`, `backups/differential/`, `backups/log/`. To do this, set `S3_PREFIX` accordingly in each EventBridge rule's `Input` payload. This way each lifecycle rule targets only its own prefix with no overlap.
+> **Note:** For the prefix-based rules above to correctly target each backup type independently, the cleanest approach is to use **separate S3 prefixes per type** — e.g. `backups/full/`, `backups/differential/`. To do this, set `S3_PREFIX` accordingly in each EventBridge rule's `Input` payload. This way each lifecycle rule targets only its own prefix with no overlap.
 
 ### Example with separate prefixes
 
@@ -447,12 +415,6 @@ aws s3api put-bucket-lifecycle-configuration \
         "Filter": { "Prefix": "backups/differential/" },
         "Status": "Enabled",
         "Expiration": { "Days": 7 }
-      },
-      {
-        "ID": "RetainLogBackups2Days",
-        "Filter": { "Prefix": "backups/log/" },
-        "Status": "Enabled",
-        "Expiration": { "Days": 2 }
       }
     ]
   }'
@@ -462,6 +424,5 @@ And the corresponding EventBridge `Input` payloads would use:
 
 - `"S3_PREFIX": "backups/full/"` for the FULL rule
 - `"S3_PREFIX": "backups/differential/"` for the DIFFERENTIAL rule
-- `"S3_PREFIX": "backups/log/"` for the LOG rule
 
 Adjust the retention days to match your organization's recovery point objectives (RPO).
